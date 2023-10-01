@@ -5,7 +5,7 @@
 #include "cache.h"
 
 constexpr int PREFETCH_DEGREE = 3;
-constexpr int PREFETCH_DISTANCE = 3;
+constexpr int PREFETCH_DISTANCE = 4;
 constexpr std::size_t STREAM_SIZE = 64;
 constexpr int THRESHOLD = 16;
 
