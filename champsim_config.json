@@ -1,5 +1,5 @@
 {
-    "executable_name": "bin/champsim_IPSTRIDE5",
+    "executable_name": "bin/champsim_StrideStream23",
     "block_size": 64,
     "page_size": 4096,
     "heartbeat_frequency": 10000000,
@@ -83,7 +83,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": false,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "ip_stride"
+        "prefetcher": "stream_plus_stride_prefetcher"
     },
 
     "ITLB": {
