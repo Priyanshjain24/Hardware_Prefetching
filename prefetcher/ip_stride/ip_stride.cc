@@ -4,7 +4,7 @@
 
 #include "cache.h"
 
-constexpr int PREFETCH_DEGREE = 5;
+constexpr int PREFETCH_DEGREE = 2;
 
 struct tracker_entry {
   uint64_t ip = 0;              // the IP we're tracking
@@ -24,19 +24,19 @@ constexpr std::size_t TRACKER_WAYS = 4;
 std::map<CACHE*, lookahead_entry> lookahead;
 std::map<CACHE*, std::array<tracker_entry, TRACKER_SETS * TRACKER_WAYS>> trackers;
 
-void CACHE::prefetcher_initialize() { std::cout << NAME << " IP-based stride prefetcher" << std::endl; }
+void CACHE::prefetcher_initialize() { std::cout << NAME << " IP-based stride prefetcher with degree: " << PREFETCH_DEGREE << std::endl; }
 
 void CACHE::prefetcher_cycle_operate()
 {
   // If a lookahead is active
   if (auto [old_pf_address, stride, degree] = lookahead[this]; degree > 0) {
     auto pf_address = old_pf_address + (stride << LOG2_BLOCK_SIZE);
-
     // If the next step would exceed the degree or run off the page, stop
     if (virtual_prefetch || (pf_address >> LOG2_PAGE_SIZE) == (old_pf_address >> LOG2_PAGE_SIZE)) {
       // check the MSHR occupancy to decide if we're going to prefetch to this
       // level or not
-      bool success = prefetch_line(0, 0, pf_address, (get_occupancy(0, pf_address) < get_size(0, pf_address) / 2), 0);
+      // bool success = prefetch_line(0, 0, pf_address, (get_occupancy(0, pf_address) < get_size(0, pf_address) / 2), 0);
+      bool success = prefetch_line(pf_address, (get_occupancy(0, pf_address) < get_size(0, pf_address) / 2), 0);
       if (success)
         lookahead[this] = {pf_address, stride, degree - 1};
       // If we fail, try again next cycle
@@ -67,7 +67,7 @@ uint32_t CACHE::prefetcher_cache_operate(uint64_t addr, uint64_t ip, uint8_t cac
     // Initialize prefetch state unless we somehow saw the same address twice in
     // a row or if this is the first time we've seen this stride
     if (stride != 0 && stride == found->last_stride)
-      lookahead[this] = {cl_addr, stride, PREFETCH_DEGREE};
+      lookahead[this] = {cl_addr << LOG2_BLOCK_SIZE, stride, PREFETCH_DEGREE};
   } else {
     // replace by LRU
     found = std::min_element(set_begin, set_end, [](tracker_entry x, tracker_entry y) { return x.last_used_cycle < y.last_used_cycle; });

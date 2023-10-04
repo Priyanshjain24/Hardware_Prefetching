@@ -5,14 +5,18 @@
 #include "cache.h"
 
 int PREFETCH_DEGREE = 4;
-constexpr double threshold_1 = 0.3;
-constexpr double threshold_2 = 0.7;
-uint64_t counter = 0;
-constexpr uint64_t COUNTER_THRESHOLD = 4096;
-uint64_t pf_issued_till_now = 0;
-uint64_t pf_useful_till_now = 0;
-uint64_t pf_issued_running = 0;
-uint64_t pf_useful_running = 0;
+
+#define THRESHOLD_1 0.3;
+#define THRESHOLD_2 0.7;
+
+uint64_t _counter = 0;
+
+constexpr uint64_t _counter_THRESHOLD = 4096;
+
+uint64_t Total_prefetches_issued = 0;
+uint64_t Total_running_prefetches = 0;
+uint64_t Current_issued_pf = 0;
+uint64_t Current_useful_pf = 0;
 
 struct tracker_entry {
   uint64_t ip = 0;              // the IP we're tracking
@@ -38,22 +42,18 @@ void CACHE::prefetcher_cycle_operate()
 {
   // If a lookahead is active
   if(pf_issued == 0 ){
-    pf_issued_till_now = 0;
-    pf_useful_till_now = 0;
-    pf_issued_running = 0;
-    pf_useful_running = 0;
+    Total_prefetches_issued = 0;
+    Total_running_prefetches = 0;
+    Current_issued_pf = 0;
+    Current_useful_pf = 0;
   }
+
   if (auto [old_pf_address, stride, degree] = lookahead[this]; degree > 0) {
     auto pf_address = old_pf_address + (stride << LOG2_BLOCK_SIZE);
-    // If the next step would exceed the degree or run off the page, stop
     if (virtual_prefetch || (pf_address >> LOG2_PAGE_SIZE) == (old_pf_address >> LOG2_PAGE_SIZE)) {
-      // check the MSHR occupancy to decide if we're going to prefetch to this
-      // level or not
-      // bool success = prefetch_line(0, 0, pf_address, (get_occupancy(0, pf_address) < get_size(0, pf_address) / 2), 0);
       bool success = prefetch_line(pf_address, (get_occupancy(0, pf_address) < get_size(0, pf_address) / 2), 0);
       if (success)
         lookahead[this] = {pf_address, stride, degree - 1};
-      // If we fail, try again next cycle
     } else {
       lookahead[this] = {};
     }
@@ -90,21 +90,21 @@ uint32_t CACHE::prefetcher_cache_operate(uint64_t addr, uint64_t ip, uint8_t cac
   // update tracking set
   *found = {ip, cl_addr, stride, current_cycle};
 
-  // update prefetch degree based on prefetch accuracy after every COUNTER_THRESHOLD accesses
-  if (++counter == COUNTER_THRESHOLD) {
-    counter = 0;
-    pf_issued_running = 0.5 * pf_issued_running + (pf_issued - pf_issued_till_now);
-    pf_useful_running = 0.5 * pf_useful_running + (pf_useful - pf_useful_till_now);
-    double accuracy = pf_issued_running == 0 ? 0.5 : (double)pf_useful_running / (double)pf_issued_running;
-    // std::cout << "Accuracy: " << accuracy << " issued_run: " << pf_issued_running << " useful_run: " << pf_useful_running <<  " pf_issued: " << pf_issued << " pf_useful: " << pf_useful << " issued_till_now: " << pf_issued_till_now << " useful_till_now: " << pf_useful_till_now << std::endl;
-    pf_issued_till_now = pf_issued;
-    pf_useful_till_now = pf_useful;
-    if (accuracy < threshold_1)
-      PREFETCH_DEGREE = 2;
-    else if (accuracy < threshold_2)
-      PREFETCH_DEGREE = 4;
-    else
-      PREFETCH_DEGREE = 6;
+  // update prefetch degree based on prefetch accuracy after every _counter_THRESHOLD accesses
+  if (++_counter == _counter_THRESHOLD) {
+    _counter = 0;
+    
+    Current_issued_pf = 0.5 * Current_issued_pf + (pf_issued - Total_prefetches_issued);
+    Current_useful_pf = 0.5 * Current_useful_pf + (pf_useful - Total_running_prefetches);
+    double accuracy = Current_issued_pf == 0 ? 0.5 : (double)Current_useful_pf / (double)Current_issued_pf;
+    // std::cout << "Accuracy: " << accuracy << " issued_run: " << Current_issued_pf << " useful_run: " << Current_useful_pf <<  " pf_issued: " << pf_issued << " pf_useful: " << pf_useful << " issued_till_now: " << Total_prefetches_issued << " useful_till_now: " << Total_running_prefetches << std::endl;
+    
+    Total_prefetches_issued = pf_issued;
+    Total_running_prefetches = pf_useful;
+
+    if (accuracy < THRESHOLD_1) PREFETCH_DEGREE = 2;
+    else if (accuracy < THRESHOLD_2) PREFETCH_DEGREE = 4;
+    else PREFETCH_DEGREE = 6;
   }
   return metadata_in;
 }
