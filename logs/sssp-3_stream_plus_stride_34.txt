@@ -13,4 +13,9 @@ CPU 0 runs /home/priyansh/Downloads/CS683/Tracefiles/sssp-3.trace.gz
 CPU 0 Bimodal branch predictor
 Basic BTB sets: 1024 ways: 8 indirect buffer size: 4096 RAS size: 64
 cpu0_L2C Stream plus stride based prefetcher
-Caught signal: 2
+Heartbeat CPU 0 instructions: 10000002 cycles: 2980396 heartbeat IPC: 3.35526 cumulative IPC: 3.35526 (Simulation time: 0 hr 0 min 22 sec) 
+Heartbeat CPU 0 instructions: 20000001 cycles: 6362341 heartbeat IPC: 2.95688 cumulative IPC: 3.1435 (Simulation time: 0 hr 0 min 49 sec) 
+
+Warmup complete CPU 0 instructions: 25000004 cycles: 8126922 (Simulation time: 0 hr 1 min 3 sec) 
+
+Heartbeat CPU 0 instructions: 30000002 cycles: 23174293 heartbeat IPC: 0.594815 cumulative IPC: 0.332284 (Simulation time: 0 hr 1 min 22 sec) 
