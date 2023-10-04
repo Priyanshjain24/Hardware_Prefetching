@@ -8,7 +8,7 @@ LDLIBS :=
 
 .phony: all clean
 
-all: bin/champsim_StrideStream23
+all: bin/champsim_stream_plus_stride_33
 
 clean: 
 	$(RM) inc/champsim_constants.h
@@ -32,7 +32,7 @@ clean:
 	 find btb/basic_btb -name \*.o -delete
 	 find btb/basic_btb -name \*.d -delete
 
-bin/champsim_StrideStream23: $(patsubst %.cc,%.o,$(wildcard src/*.cc)) obj/repl_rreplacementDlru.a obj/pref_pprefetcherDno.a obj/pref_pprefetcherDno_instr.a obj/pref_pprefetcherDstream_plus_stride_prefetcher.a obj/bpred_bbranchDbimodal.a obj/btb_bbtbDbasic_btb.a
+bin/champsim_stream_plus_stride_33: $(patsubst %.cc,%.o,$(wildcard src/*.cc)) obj/repl_rreplacementDlru.a obj/pref_pprefetcherDno.a obj/pref_pprefetcherDno_instr.a obj/pref_pprefetcherDstream_plus_stride_prefetcher.a obj/bpred_bbranchDbimodal.a obj/btb_bbtbDbasic_btb.a
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 replacement/lru/%.o: CFLAGS += -Ireplacement/lru
