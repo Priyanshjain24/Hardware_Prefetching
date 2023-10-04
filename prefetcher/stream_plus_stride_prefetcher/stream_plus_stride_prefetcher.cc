@@ -4,17 +4,23 @@
 
 #include "cache.h"
 
-constexpr int PREFETCH_DEGREE = 3;
-constexpr int PREFETCH_DISTANCE = 3;
+constexpr int PREFETCH_DEGREE = 4;
+constexpr int PREFETCH_DISTANCE = 5;
 constexpr std::size_t STREAM_SIZE = 64;
 constexpr int THRESHOLD = 16;
+
+//Tracker Entry States
+#define INVALID     0
+#define ALLOCATED   1
+#define TRAINING    2
+#define MONITORING  3
 
 struct tracker_entry {
   uint64_t start_ptr = 0;
   uint64_t end_ptr = 0;
-  int stride = 0;            // -ve = backwards, +ve = forwards
-  uint32_t state = 0;           // 0 = invalid, 1 = allocated, 2 = training, 3 = monitoring
-  uint64_t original_addr = 0;   // the address that started this stream
+  int stride = 0;             // (-ve)->Backwards | (+ve)->Forward
+  uint32_t state = INVALID;         
+  uint64_t original_addr = 0; // the address that started this stream
   uint64_t last_accesed_addr = 0;
   uint64_t last_used_cycle = 0; // use LRU to evict old IP trackers
 };
@@ -28,78 +34,93 @@ struct lookahead_entry {
 std::map<CACHE*, lookahead_entry> lookahead;
 std::map<CACHE*, std::array<tracker_entry, STREAM_SIZE>> trackers;
 
-void CACHE::prefetcher_initialize() { std::cout << NAME << " Stream plus stride based prefetcher" << std::endl; }
+void CACHE::prefetcher_initialize()
+{
+  std::cout << NAME << " Stream-Stride Prefetcher with DEGREE: " << PREFETCH_DEGREE << " and DISTANCE: " << PREFETCH_DISTANCE << std::endl;
+}
 
 uint32_t CACHE::prefetcher_cache_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in)
 {
   uint64_t cl_addr = addr >> LOG2_BLOCK_SIZE;
   auto set_begin = std::begin(trackers[this]);
   auto set_end = std::end(trackers[this]);
-  // monitor found
-  auto found_monitor = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) { return x.state == 3 && x.start_ptr <= cl_addr && x.end_ptr >= cl_addr; });
-  if (found_monitor != set_end) {
+
+  //  FINDING THE ENTRY IN MONITORING STATE
+  auto monitor_entry = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) { return x.state == MONITORING && x.start_ptr <= cl_addr && x.end_ptr >= cl_addr; });
+  if (monitor_entry != set_end) {
     // set lookahead
-    if (found_monitor->stride > 0) {
-      lookahead[this] = {found_monitor->end_ptr << LOG2_BLOCK_SIZE, found_monitor->stride, PREFETCH_DEGREE};
-      found_monitor->start_ptr = found_monitor->start_ptr + PREFETCH_DEGREE;
-      found_monitor->end_ptr = found_monitor->end_ptr + PREFETCH_DEGREE;
-    } else {
-      lookahead[this] = {found_monitor->start_ptr << LOG2_BLOCK_SIZE, found_monitor->stride, PREFETCH_DEGREE};
-      found_monitor->start_ptr = found_monitor->start_ptr - PREFETCH_DEGREE;
-      found_monitor->end_ptr = found_monitor->end_ptr - PREFETCH_DEGREE;
+    if (monitor_entry->stride > 0) {
+      lookahead[this] = {monitor_entry->end_ptr << LOG2_BLOCK_SIZE, monitor_entry->stride, PREFETCH_DEGREE};
+    } 
+    else 
+    {
+      lookahead[this] = {monitor_entry->start_ptr << LOG2_BLOCK_SIZE, monitor_entry->stride, PREFETCH_DEGREE};
     }
-    found_monitor->last_used_cycle = current_cycle;
+    monitor_entry->start_ptr = monitor_entry->start_ptr + PREFETCH_DEGREE * monitor_entry->stride;
+    monitor_entry->end_ptr = monitor_entry->end_ptr + PREFETCH_DEGREE * monitor_entry->stride;
+    monitor_entry->last_used_cycle = current_cycle;
     return metadata_in;
   }
-  if((int)cache_hit == 1) return metadata_in;
-  // training found
-  auto found_training = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) {
-    return x.state == 2 && x.original_addr - THRESHOLD <= cl_addr && x.original_addr + THRESHOLD >= cl_addr;
+  if ((int)cache_hit == 1)
+    return metadata_in;
+
+
+  // FINDING THE ENTRY IN TRAINING STATE
+  auto training_entry = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) {
+    return x.state == TRAINING && x.original_addr - THRESHOLD <= cl_addr && x.original_addr + THRESHOLD >= cl_addr;
   });
-  if (found_training != set_end) {
+  if (training_entry != set_end) {
     // new stride
-    int new_stride = cl_addr - found_training->last_accesed_addr;
-    if (new_stride == found_training->stride) {
-      found_training->state = 3;
-      found_training->start_ptr = found_training->original_addr;
-      // TODO: may change
-      found_training->end_ptr = found_training->start_ptr + PREFETCH_DISTANCE;
-    } else {
-      found_training->stride = new_stride;
-      found_training->last_accesed_addr = cl_addr;
+    int new_stride = cl_addr - training_entry->last_accesed_addr;
+    if (new_stride == training_entry->stride) 
+    {
+      training_entry->state = MONITORING;
+      training_entry->start_ptr = training_entry->original_addr;
+      training_entry->end_ptr = training_entry->start_ptr + PREFETCH_DISTANCE;
+    } 
+    else 
+    {
+      training_entry->stride = new_stride;
+      training_entry->last_accesed_addr = cl_addr;
     }
-    found_training->last_used_cycle = current_cycle;
+    training_entry->last_used_cycle = current_cycle;
     return metadata_in;
   }
-  // allocated found
-  auto found_allocated = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) {
-    return x.state == 1 && x.original_addr - THRESHOLD <= cl_addr && x.original_addr + THRESHOLD >= cl_addr;
+
+  // FINDING THE ENTRY IN ALLOCATED STATE
+  auto allocated_entry = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) {
+    return x.state == ALLOCATED && x.original_addr - THRESHOLD <= cl_addr && x.original_addr + THRESHOLD >= cl_addr;
   });
-  if (found_allocated != set_end) {
+  if (allocated_entry != set_end) 
+  {
     // new stride
-    int new_stride = cl_addr - found_allocated->last_accesed_addr;
-    found_allocated->stride = new_stride;
-    found_allocated->state = 2;
-    found_allocated->last_accesed_addr = cl_addr;
-    found_allocated->last_used_cycle = current_cycle;
+    int new_stride = cl_addr - allocated_entry->last_accesed_addr;
+    allocated_entry->stride = new_stride;
+    allocated_entry->state = TRAINING;
+    allocated_entry->last_accesed_addr = cl_addr;
+    allocated_entry->last_used_cycle = current_cycle;
     return metadata_in;
   }
-  // invalid found
-  auto found_invalid = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) { return x.state == 0; });
-  if (found_invalid != set_end) {
-    found_invalid->state = 1;
-    found_invalid->original_addr = cl_addr;
-    found_invalid->last_used_cycle = current_cycle;
+
+  // FINDING THE ENTRY IN INVALID STATE
+  auto invalid_entry = std::find_if(set_begin, set_end, [cl_addr](tracker_entry x) { return x.state == INVALID; });
+  if (invalid_entry != set_end) 
+  {
+    invalid_entry->state = ALLOCATED;
+    invalid_entry->original_addr = cl_addr;
+    invalid_entry->last_used_cycle = current_cycle;
     return metadata_in;
   }
-  // evict
-  auto evict = std::min_element(set_begin, set_end, [](tracker_entry x, tracker_entry y) { return x.last_used_cycle < y.last_used_cycle; });
-  evict->start_ptr = 0;
-  evict->end_ptr = 0;
-  evict->stride = 0;
-  evict->state = 1;
-  evict->original_addr = cl_addr;
-  evict->last_used_cycle = current_cycle;
+
+  // LRU replaces the Least Recently Used Entry with Current Entry if their is NO entry already present in the set
+  auto eviction_block = std::min_element(set_begin, set_end, [](tracker_entry x, tracker_entry y) { return x.last_used_cycle < y.last_used_cycle; });
+  eviction_block->start_ptr = 0;
+  eviction_block->end_ptr = 0;
+  eviction_block->stride = 0;
+  eviction_block->state = ALLOCATED;
+  eviction_block->original_addr = cl_addr;
+  eviction_block->last_used_cycle = current_cycle;
+  
   return metadata_in;
 }
 
