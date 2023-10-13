@@ -64,6 +64,7 @@ We have the maximum normalised speedup across all tracefiles using IP-Stride deg
 |Tracefile | 602  | 603       | 619       | sssp      |bc-0      | Mean  |
 |-----------|-----------|-----------|-----------|-----------|-----------|-----------|
 | Accuracy(in %) |   99.69   |  100  |100|63.35|46.59|81.95|h|
+
 ![Stream Prefetcher Accuracy](./plots/task1_pref_accuracy.png)
 
 ## Stream Prefetcher
